@@ -1,0 +1,23 @@
+# name: test/sql/sequence_map.test
+# description: test sequence_map extension
+# group: [sequence_map]
+
+# Before we load the extension, this will fail
+statement error
+SELECT sequence_map('Sam');
+----
+Catalog Error: Scalar Function with name sequence_map does not exist!
+
+# Require statement will ensure this test is run with this extension loaded
+require sequence_map
+
+# Confirm the extension works
+query I
+SELECT sequence_map('Sam');
+----
+SequenceMap Sam 🐥
+
+query I
+SELECT sequence_map_openssl_version('Michael') ILIKE 'SequenceMap Michael, my linked OpenSSL version is OpenSSL%';
+----
+true
