@@ -139,47 +139,47 @@ inline void SequenceMapScalarFun(DataChunk &args, ExpressionState &state,
       });
 }
 
-	struct TranslateSequenceData: FunctionData {
-        string_t annotation_name;
-        uint64_t start_index_one_based;
-        int64_t end_index_one_based;
+struct TranslateSequenceData: FunctionData {
+	string_t annotation_name;
+	uint64_t start_index_one_based;
+	int64_t end_index_one_based;
 
-	unique_ptr<FunctionData> Copy() const override {
-	    auto res = make_uniq<TranslateSequenceData>();
-	    res->annotation_name = annotation_name;
-	    res->start_index_one_based = start_index_one_based;
-	    res->end_index_one_based = end_index_one_based;
-	    return unique_ptr<FunctionData>(std::move(res));
+unique_ptr<FunctionData> Copy() const override {
+	auto res = make_uniq<TranslateSequenceData>();
+	res->annotation_name = annotation_name;
+	res->start_index_one_based = start_index_one_based;
+	res->end_index_one_based = end_index_one_based;
+	return unique_ptr<FunctionData>(std::move(res));
+};
+	bool Equals(const FunctionData &other) const {
+		return annotation_name == other.Cast<TranslateSequenceData>().annotation_name &&
+			start_index_one_based == other.Cast<TranslateSequenceData>().start_index_one_based &&
+			end_index_one_based==other.Cast<TranslateSequenceData>().end_index_one_based;
 	};
-        bool Equals(const FunctionData &other) const {
-            return annotation_name == other.Cast<TranslateSequenceData>().annotation_name &&
-                start_index_one_based == other.Cast<TranslateSequenceData>().start_index_one_based &&
-                end_index_one_based==other.Cast<TranslateSequenceData>().end_index_one_based;
-        };
-        TranslateSequenceData() {
-            annotation_name = "";
-            start_index_one_based = 1;
-            end_index_one_based = 0;
-        }
-    };
+	TranslateSequenceData() {
+		annotation_name = "";
+		start_index_one_based = 1;
+		end_index_one_based = 0;
+	}
+};
 
-	unique_ptr<FunctionData> TranslateSequenceBind(ClientContext &context, ScalarFunction &bound_function,
-                                                           vector<unique_ptr<Expression>> &arguments) {
-        auto res = make_uniq<TranslateSequenceData>();
-		res->annotation_name = StringValue::Get(ExpressionExecutor::EvaluateScalar(context, *arguments[0]));
-		res->start_index_one_based = UIntegerValue::Get(ExpressionExecutor::EvaluateScalar(context, *arguments[1]));
-		res->end_index_one_based = IntegerValue::Get(ExpressionExecutor::EvaluateScalar(context, *arguments[2]));
-        Function::EraseArgument(bound_function, arguments, 0);
-		Function::EraseArgument(bound_function, arguments, 0);
-		Function::EraseArgument(bound_function, arguments, 0);
-        return std::move(res);
-    }
+unique_ptr<FunctionData> TranslateSequenceBind(ClientContext &context, ScalarFunction &bound_function,
+														vector<unique_ptr<Expression>> &arguments) {
+	auto res = make_uniq<TranslateSequenceData>();
+	res->annotation_name = StringValue::Get(ExpressionExecutor::EvaluateScalar(context, *arguments[0]));
+	res->start_index_one_based = UIntegerValue::Get(ExpressionExecutor::EvaluateScalar(context, *arguments[1]));
+	res->end_index_one_based = IntegerValue::Get(ExpressionExecutor::EvaluateScalar(context, *arguments[2]));
+	Function::EraseArgument(bound_function, arguments, 0);
+	Function::EraseArgument(bound_function, arguments, 0);
+	Function::EraseArgument(bound_function, arguments, 0);
+	return std::move(res);
+}
 
 inline void TranslateSequenceScalarFun(DataChunk &args, ExpressionState &state,
-                                 Vector &result) {
-  auto &annotation_string_vector = args.data[0];
-  auto &sequence_vector = args.data[1];
-BinaryExecutor::Execute<string_t, string_t, string_t>(
+									   Vector &result) {
+	auto &annotation_string_vector = args.data[0];
+	auto &sequence_vector = args.data[1];
+	BinaryExecutor::Execute<string_t, string_t, string_t>(
 		annotation_string_vector, sequence_vector, result, args.size(), [&](string_t annotation_string, string_t sequence) {
 			auto &func_expr = state.expr.Cast<BoundFunctionExpression>();
 			auto &info = func_expr.bind_info->Cast<TranslateSequenceData>();
