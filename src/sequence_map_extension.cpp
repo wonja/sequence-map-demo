@@ -184,41 +184,16 @@ inline void TranslateSequenceScalarFun(DataChunk &args, ExpressionState &state,
         auto &func_expr = state.expr.Cast<BoundFunctionExpression>();
 		auto &info = func_expr.bind_info->Cast<TranslateSequenceData>();
 
-		auto res = StringVector::EmptyString(result, sequence.GetSize() / 3);
+		auto res_size = info.end_index_one_based == -1 ? sequence.GetSize() / 3 - info.start_index_one_based + 1 : info.end_index_one_based - info.start_index_one_based;
+		auto res = StringVector::EmptyString(result, res_size);
         auto res_ptr = res.GetDataWriteable();
         auto sequence_ptr = sequence.GetDataUnsafe();
 
-        for (idx_t i = 0; i < sequence.GetSize() / 3; i++) {
+        for (idx_t i = 0; i < res_size; i++) {
           res_ptr[i] =
-              sequence_map_lookup_table[Perfect_Hash::hash(sequence_ptr + i * 3, 3)];
+              sequence_map_lookup_table[Perfect_Hash::hash(sequence_ptr + (i + info.start_index_one_based - 1) * 3, 3)];
         }
 
-		if (!res.Empty()) {
-			// If end_index_one_based is -1, use until the end of the sequence
-			if (info.end_index_one_based == -1) {
-				if (info.start_index_one_based == 1) {
-					return res;
-				} else {
-					// there's probably a better way to do this
-					auto new_res = StringVector::EmptyString(result, res.GetSize() - info.start_index_one_based + 1);
-					auto new_res_ptr = new_res.GetDataWriteable();
-					auto res_ptr = res.GetDataUnsafe();
-					for (idx_t i = 0; i < res.GetSize() - info.start_index_one_based + 1; i++) {
-						new_res_ptr[i] = res_ptr[i + info.start_index_one_based - 1];
-					}
-					return new_res;
-				}
-            } else {
-				// there's probably a better way to do this
-				auto new_res = StringVector::EmptyString(result, info.end_index_one_based - info.start_index_one_based + 1);
-				auto new_res_ptr = new_res.GetDataWriteable();
-				auto res_ptr = res.GetDataUnsafe();
-				for (idx_t i = 0; i < info.end_index_one_based - info.start_index_one_based + 1; i++) {
-					new_res_ptr[i] = res_ptr[i + info.start_index_one_based - 1];
-				}
-				return new_res;
-            }
-		}
         return res;
       });
 }
