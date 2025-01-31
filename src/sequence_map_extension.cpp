@@ -7,6 +7,7 @@
 #include "duckdb/function/scalar_function.hpp"
 #include "duckdb/main/extension_util.hpp"
 #include <duckdb/parser/parsed_data/create_scalar_function_info.hpp>
+#include <duckdb/planner/expression/bound_function_expression.hpp>
 
 namespace duckdb {
 
@@ -138,6 +139,91 @@ inline void SequenceMapScalarFun(DataChunk &args, ExpressionState &state,
       });
 }
 
+	struct TranslateSequenceData: FunctionData {
+        string_t annotation_name;
+        uint64_t start_index_one_based;
+        int64_t end_index_one_based;
+
+	unique_ptr<FunctionData> Copy() const override {
+	    auto res = make_uniq<TranslateSequenceData>();
+	    res->annotation_name = annotation_name;
+	    res->start_index_one_based = start_index_one_based;
+	    res->end_index_one_based = end_index_one_based;
+	    return unique_ptr<FunctionData>(std::move(res));
+	};
+        bool Equals(const FunctionData &other) const {
+            return annotation_name == other.Cast<TranslateSequenceData>().annotation_name &&
+                start_index_one_based == other.Cast<TranslateSequenceData>().start_index_one_based &&
+                end_index_one_based==other.Cast<TranslateSequenceData>().end_index_one_based;
+        };
+        TranslateSequenceData() {
+            annotation_name = "";
+            start_index_one_based = 1;
+            end_index_one_based = 0;
+        }
+    };
+
+	unique_ptr<FunctionData> TranslateSequenceBind(ClientContext &context, ScalarFunction &bound_function,
+                                                           vector<unique_ptr<Expression>> &arguments) {
+        auto res = make_uniq<TranslateSequenceData>();
+		res->annotation_name = StringValue::Get(ExpressionExecutor::EvaluateScalar(context, *arguments[0]));
+		res->start_index_one_based = UIntegerValue::Get(ExpressionExecutor::EvaluateScalar(context, *arguments[1]));
+		res->end_index_one_based = IntegerValue::Get(ExpressionExecutor::EvaluateScalar(context, *arguments[2]));
+        Function::EraseArgument(bound_function, arguments, 0);
+		Function::EraseArgument(bound_function, arguments, 0);
+		Function::EraseArgument(bound_function, arguments, 0);
+        return std::move(res);
+    }
+
+inline void TranslateSequenceScalarFun(DataChunk &args, ExpressionState &state,
+                                 Vector &result) {
+  auto &annotation_string_vector = args.data[0];
+  auto &sequence_vector = args.data[1];
+  BinaryExecutor::Execute<string_t, string_t, string_t>(
+      annotation_string_vector, sequence_vector, result, args.size(), [&](string_t annotation_string, string_t sequence) {
+        auto &func_expr = state.expr.Cast<BoundFunctionExpression>();
+		auto &info = func_expr.bind_info->Cast<TranslateSequenceData>();
+
+		auto res = StringVector::EmptyString(result, sequence.GetSize() / 3);
+        auto res_ptr = res.GetDataWriteable();
+        auto sequence_ptr = sequence.GetDataUnsafe();
+
+        for (idx_t i = 0; i < sequence.GetSize() / 3; i++) {
+          res_ptr[i] =
+              sequence_map_lookup_table[Perfect_Hash::hash(sequence_ptr + i * 3, 3)];
+        }
+
+		if (!res.Empty()) {
+			// If end_index_one_based is -1, use until the end of the sequence
+			if (info.end_index_one_based == -1) {
+				if (info.start_index_one_based == 1) {
+					return res;
+				} else {
+					// there's probably a better way to do this
+					auto new_res = StringVector::EmptyString(result, res.GetSize() - info.start_index_one_based + 1);
+					auto new_res_ptr = new_res.GetDataWriteable();
+					auto res_ptr = res.GetDataUnsafe();
+					for (idx_t i = 0; i < res.GetSize() - info.start_index_one_based + 1; i++) {
+						new_res_ptr[i] = res_ptr[i + info.start_index_one_based - 1];
+					}
+					return new_res;
+				}
+            } else {
+				// there's probably a better way to do this
+				auto new_res = StringVector::EmptyString(result, info.end_index_one_based - info.start_index_one_based + 1);
+				auto new_res_ptr = new_res.GetDataWriteable();
+				auto res_ptr = res.GetDataUnsafe();
+				for (idx_t i = 0; i < info.end_index_one_based - info.start_index_one_based + 1; i++) {
+					new_res_ptr[i] = res_ptr[i + info.start_index_one_based - 1];
+				}
+				return new_res;
+            }
+		}
+        return res;
+      });
+}
+
+
 static void LoadInternal(DatabaseInstance &instance) {
   // Register a scalar function
 
@@ -166,6 +252,11 @@ static void LoadInternal(DatabaseInstance &instance) {
       ScalarFunction("sequence_map", {LogicalType::VARCHAR},
                      LogicalType::VARCHAR, SequenceMapScalarFun);
   ExtensionUtil::RegisterFunction(instance, sequence_map_scalar_function);
+
+  auto translate_sequence_scalar_function =
+      ScalarFunction("translate_sequence", {LogicalType::VARCHAR, LogicalType::UINTEGER, LogicalType::INTEGER, LogicalType::VARCHAR, LogicalType::VARCHAR},
+                     LogicalType::VARCHAR, TranslateSequenceScalarFun, TranslateSequenceBind);
+  ExtensionUtil::RegisterFunction(instance, translate_sequence_scalar_function);
 }
 
 void SequenceMapExtension::Load(DuckDB &db) { LoadInternal(*db.instance); }
