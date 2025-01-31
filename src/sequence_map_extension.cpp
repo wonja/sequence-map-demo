@@ -179,23 +179,53 @@ inline void TranslateSequenceScalarFun(DataChunk &args, ExpressionState &state,
                                  Vector &result) {
   auto &annotation_string_vector = args.data[0];
   auto &sequence_vector = args.data[1];
-  BinaryExecutor::Execute<string_t, string_t, string_t>(
-      annotation_string_vector, sequence_vector, result, args.size(), [&](string_t annotation_string, string_t sequence) {
-        auto &func_expr = state.expr.Cast<BoundFunctionExpression>();
-		auto &info = func_expr.bind_info->Cast<TranslateSequenceData>();
+BinaryExecutor::Execute<string_t, string_t, string_t>(
+		annotation_string_vector, sequence_vector, result, args.size(), [&](string_t annotation_string, string_t sequence) {
+			auto &func_expr = state.expr.Cast<BoundFunctionExpression>();
+			auto &info = func_expr.bind_info->Cast<TranslateSequenceData>();
 
-		auto res_size = info.end_index_one_based == -1 ? sequence.GetSize() / 3 - info.start_index_one_based + 1 : info.end_index_one_based - info.start_index_one_based;
-		auto res = StringVector::EmptyString(result, res_size);
-        auto res_ptr = res.GetDataWriteable();
-        auto sequence_ptr = sequence.GetDataUnsafe();
+			auto process_sequence = [&](const string &seq, idx_t res_size) {
+				auto res = StringVector::EmptyString(result, res_size);
+				auto res_ptr = res.GetDataWriteable();
+				auto sequence_ptr = seq.c_str();
 
-        for (idx_t i = 0; i < res_size; i++) {
-          res_ptr[i] =
-              sequence_map_lookup_table[Perfect_Hash::hash(sequence_ptr + (i + info.start_index_one_based - 1) * 3, 3)];
-        }
+				for (idx_t i = 0; i < res_size; i++) {
+					res_ptr[i] = sequence_map_lookup_table[Perfect_Hash::hash(sequence_ptr + (i + info.start_index_one_based - 1) * 3, 3)];
+				}
+				return res;
+			};
 
-        return res;
-      });
+			if (!info.annotation_name.Empty()) {
+				if (annotation_string.Empty()) {
+					return StringVector::EmptyString(result, 0);
+				}
+				std::string annotation_name_string = info.annotation_name.GetString();
+				auto rows = StringUtil::Split(annotation_string.GetString(), "\\\\n");
+				std::vector<std::vector<std::string>> annotations;
+				for (const auto &row : rows) {
+					annotations.push_back(StringUtil::Split(row, "\\\\t"));
+				}
+				auto found = std::find_if(annotations.begin(), annotations.end(),
+					[&annotation_name_string](const std::vector<std::string> &annotation) {
+						return annotation.size() > 3 && annotation[3] == annotation_name_string;
+					}
+				);
+				if (found == annotations.end()) {
+					return StringVector::EmptyString(result, 0);
+				} else {
+					int start = std::stoi((*found)[1]) - 1;
+					int end = std::stoi((*found)[2]);
+					string subsequence = sequence.GetString().substr(start, end - start);
+					auto res_size = info.end_index_one_based == -1 ? subsequence.size() / 3 - info.start_index_one_based + 1 : std::min(info.end_index_one_based - info.start_index_one_based, (int)subsequence.size() / 3 - info.start_index_one_based + 1);
+					return process_sequence(subsequence, res_size);
+				}
+			} else if (!sequence.Empty()) {
+				auto res_size = info.end_index_one_based == -1 ? sequence.GetSize() / 3 - info.start_index_one_based + 1 : std::min(info.end_index_one_based - info.start_index_one_based, (int)sequence.GetSize() / 3 - info.start_index_one_based + 1);
+				return process_sequence(sequence.GetString(), res_size);
+			} else {
+				return StringVector::EmptyString(result, 0);
+			}
+		});
 }
 
 
